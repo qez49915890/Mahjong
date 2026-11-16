@@ -123,100 +123,157 @@ const app=document.getElementById('app');
 
 let peer=null,conns={},hostConn=null,myP=null,name='',code='',host=false,S=null,G=null,timer=null,sel=null,msg='',connecting=false,offlineMode=false;
 
-/* ---------- 圖片載入與備援處理 ---------- */
-let spriteUrl = 'image_d1f20b.jpg';
-(function checkSpriteImage(){
-  const img = new Image();
-  img.onload = () => {
-    document.documentElement.style.setProperty('--tile-img', `url('${spriteUrl}')`);
-  };
-  img.onerror = () => {
-    const c = document.createElement('canvas');
-    c.width = 900; c.height = 650;
-    const ctx = c.getContext('2d');
-    const cw = 100, ch = 130;
-    const drawTileBase = (r, col, isBack=false) => {
-      const x = col*cw + 3, y = r*ch + 3, w = cw - 6, h = ch - 6;
-      ctx.fillStyle = isBack ? '#f59e0b' : '#fdfcf8';
-      ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.roundRect(x, y, w, h, 12);
-      ctx.fill();
-      ctx.stroke();
-    };
-    const drawText = (r, col, topTxt, botTxt, topCol, botCol, big=false) => {
-      const cx = col*cw + cw/2, cy = r*ch + ch/2;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      if(big){
-        ctx.fillStyle = topCol;
-        ctx.font = 'bold 54px "Noto Serif TC", "KaiTi", serif';
-        ctx.fillText(topTxt, cx, cy);
-      } else {
-        ctx.fillStyle = topCol;
-        ctx.font = 'bold 40px "Noto Serif TC", "KaiTi", serif';
-        ctx.fillText(topTxt, cx, cy - 24);
-        ctx.fillStyle = botCol;
-        ctx.font = 'bold 40px "Noto Serif TC", "KaiTi", serif';
-        ctx.fillText(botTxt, cx, cy + 26);
-      }
-    };
-    const drawDot = (x, y, rad, color) => {
-      ctx.strokeStyle = color; ctx.fillStyle = color;
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI*2); ctx.stroke();
-      ctx.beginPath(); ctx.arc(x, y, rad*0.45, 0, Math.PI*2); ctx.fill();
-    };
-    for(let col=0; col<9; col++){
-      drawTileBase(0, col);
-      const cx = col*cw+50, cy = 65, n = col+1;
-      if(n===1){ drawDot(cx, cy, 28, '#1e40af'); drawDot(cx, cy, 18, '#dc2626'); }
-      else if(n===2){ drawDot(cx, cy-26, 18, '#1e40af'); drawDot(cx, cy+26, 18, '#15803d'); }
-      else if(n===3){ drawDot(cx-22, cy-32, 14, '#1e40af'); drawDot(cx, cy, 14, '#dc2626'); drawDot(cx+22, cy+32, 14, '#15803d'); }
-      else if(n===4){ [[-20,-26,'#15803d'],[20,-26,'#1e40af'],[-20,26,'#1e40af'],[20,26,'#15803d']].forEach(p=>drawDot(cx+p[0],cy+p[1],14,p[2])); }
-      else if(n===5){ [[-22,-30,'#15803d'],[22,-30,'#1e40af'],[0,0,'#dc2626'],[-22,30,'#1e40af'],[22,30,'#15803d']].forEach(p=>drawDot(cx+p[0],cy+p[1],13,p[2])); }
-      else if(n===6){ [[-18,-32,'#15803d'],[18,-32,'#15803d'],[-18,4,'#dc2626'],[18,4,'#dc2626'],[-18,34,'#dc2626'],[18,34,'#dc2626']].forEach(p=>drawDot(cx+p[0],cy+p[1],12,p[2])); }
-      else if(n===7){ [[-22,-38,'#15803d'],[0,-28,'#15803d'],[22,-18,'#15803d'],[-18,12,'#dc2626'],[18,12,'#dc2626'],[-18,38,'#dc2626'],[18,38,'#dc2626']].forEach(p=>drawDot(cx+p[0],cy+p[1],11,p[2])); }
-      else if(n===8){ for(let r=0;r<4;r++)for(let k=0;k<2;k++)drawDot(cx+(k?18:-18), cy-36+r*24, 10, '#1e40af'); }
-      else if(n===9){ for(let r=0;r<3;r++)for(let k=0;k<3;k++)drawDot(cx+(k-1)*24, cy+(r-1)*28, 10, r===0?'#1e40af':r===1?'#dc2626':'#15803d'); }
-    }
-    const drawStick = (x, y, h, color) => {
-      ctx.fillStyle = color;
-      ctx.beginPath(); ctx.roundRect(x-5, y-h/2, 10, h, 4); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.fillRect(x-2, y-2, 4, 4);
-    };
-    for(let col=0; col<9; col++){
-      drawTileBase(1, col);
-      const cx = col*cw+50, cy = ch+65, n = col+1;
-      if(n===1){ drawText(1, col, '🀐', '', '#15803d', '', true); }
-      else if(n===2){ drawStick(cx, cy-22, 34, '#15803d'); drawStick(cx, cy+22, 34, '#15803d'); }
-      else if(n===3){ drawStick(cx, cy-22, 34, '#15803d'); drawStick(cx-18, cy+22, 34, '#15803d'); drawStick(cx+18, cy+22, 34, '#15803d'); }
-      else if(n===4){ [[-16,-22],[16,-22],[-16,22],[16,22]].forEach(p=>drawStick(cx+p[0],cy+p[1],34,'#15803d')); }
-      else if(n===5){ [[-22,-22,'#15803d'],[22,-22,'#15803d'],[0,0,'#dc2626'],[-22,22,'#15803d'],[22,22,'#15803d']].forEach(p=>drawStick(cx+p[0],cy+p[1],32,p[2])); }
-      else if(n===6){ [[-20,-22],[0,-22],[20,-22],[-20,22],[0,22],[20,22]].forEach(p=>drawStick(cx+p[0],cy+p[1],32,'#15803d')); }
-      else if(n===7){ drawStick(cx, cy-32, 24, '#dc2626'); [[-20,0,'#15803d'],[0,0,'#1e40af'],[20,0,'#15803d'],[-20,30,'#15803d'],[0,30,'#1e40af'],[20,30,'#15803d']].forEach(p=>drawStick(cx+p[0],cy+p[1],24,p[2])); }
-      else if(n===8){ [[-20,-24],[0,-24],[20,-24],[-20,24],[0,24],[20,24]].forEach(p=>drawStick(cx+p[0],cy+p[1],28,'#15803d')); drawStick(cx-10,cy,24,'#15803d'); drawStick(cx+10,cy,24,'#15803d'); }
-      else if(n===9){ for(let r=0;r<3;r++)for(let k=0;k<3;k++)drawStick(cx+(k-1)*22, cy+(r-1)*30, 24, k===1?'#dc2626':'#15803d'); }
-    }
-    const wanNums = ['一','二','三','四','五','六','七','八','九'];
-    wanNums.forEach((w, col) => { drawTileBase(2, col); drawText(2, col, w, '萬', '#1e3a8a', '#dc2626'); });
-    ['東','南','西','北'].forEach((w, col) => { drawTileBase(3, col); drawText(3, col, w, '', '#1e3a8a', '', true); });
-    drawTileBase(3, 4); drawText(3, 4, '中', '', '#dc2626', '', true);
-    drawTileBase(3, 5); drawText(3, 5, '發', '', '#15803d', '', true);
-    drawTileBase(3, 6);
-    ctx.strokeStyle = '#1e3a8a'; ctx.lineWidth = 4; ctx.strokeRect(6*cw+22, 3*ch+22, cw-44, ch-44);
-    drawTileBase(3, 7, true);
-    drawTileBase(3, 8, true);
-    const fls = [['1','春','#15803d','#dc2626'],['2','夏','#15803d','#dc2626'],['3','秋','#15803d','#dc2626'],['4','冬','#15803d','#dc2626'],
-                 ['梅','1','#1e3a8a','#dc2626'],['蘭','2','#1e3a8a','#dc2626'],['菊','3','#1e3a8a','#dc2626'],['竹','4','#1e3a8a','#dc2626']];
-    fls.forEach((f, col) => { drawTileBase(4, col); drawText(4, col, f[0], f[1], f[2], f[3]); });
-    drawTileBase(4, 8, true);
+/* ---------- 內建 Canvas 麻將牌面繪製 ---------- */
+let spriteUrl = '';
+(function generateTileAtlas(){
+  const c = document.createElement('canvas');
+  c.width = 900; c.height = 650;
+  const ctx = c.getContext('2d');
+  const cw = 100, ch = 130;
 
-    spriteUrl = c.toDataURL('image/png');
-    document.documentElement.style.setProperty('--tile-img', `url('${spriteUrl}')`);
+  const drawTileBase = (r, col, isBack=false) => {
+    const x = col*cw + 3, y = r*ch + 3, w = cw - 6, h = ch - 6;
+    ctx.fillStyle = isBack ? '#f59e0b' : '#fdfcf8';
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 12);
+    ctx.fill();
+    ctx.stroke();
   };
-  img.src = spriteUrl;
+
+  const drawText = (r, col, topTxt, botTxt, topCol, botCol, big=false) => {
+    const cx = col*cw + cw/2, cy = r*ch + ch/2;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if(big){
+      ctx.fillStyle = topCol;
+      ctx.font = 'bold 54px "Noto Serif TC", "KaiTi", serif';
+      ctx.fillText(topTxt, cx, cy);
+    } else {
+      ctx.fillStyle = topCol;
+      ctx.font = 'bold 40px "Noto Serif TC", "KaiTi", serif';
+      ctx.fillText(topTxt, cx, cy - 24);
+      ctx.fillStyle = botCol;
+      ctx.font = 'bold 40px "Noto Serif TC", "KaiTi", serif';
+      ctx.fillText(botTxt, cx, cy + 26);
+    }
+  };
+
+  const drawDot = (x, y, rad, color) => {
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, rad*0.45, 0, Math.PI*2); ctx.fill();
+  };
+
+  // 第 0 列：筒子 (一筒 ~ 九筒)
+  for(let col=0; col<9; col++){
+    drawTileBase(0, col);
+    const cx = col*cw+50, cy = 65, n = col+1;
+    if(n===1){ drawDot(cx, cy, 28, '#1e40af'); drawDot(cx, cy, 18, '#dc2626'); }
+    else if(n===2){ drawDot(cx, cy-26, 18, '#1e40af'); drawDot(cx, cy+26, 18, '#15803d'); }
+    else if(n===3){ drawDot(cx-22, cy-32, 14, '#1e40af'); drawDot(cx, cy, 14, '#dc2626'); drawDot(cx+22, cy+32, 14, '#15803d'); }
+    else if(n===4){ [[-20,-26,'#15803d'],[20,-26,'#1e40af'],[-20,26,'#1e40af'],[20,26,'#15803d']].forEach(p=>drawDot(cx+p[0],cy+p[1],14,p[2])); }
+    else if(n===5){ [[-22,-30,'#15803d'],[22,-30,'#1e40af'],[0,0,'#dc2626'],[-22,30,'#1e40af'],[22,30,'#15803d']].forEach(p=>drawDot(cx+p[0],cy+p[1],13,p[2])); }
+    else if(n===6){ [[-18,-32,'#15803d'],[18,-32,'#15803d'],[-18,4,'#dc2626'],[18,4,'#dc2626'],[-18,34,'#dc2626'],[18,34,'#dc2626']].forEach(p=>drawDot(cx+p[0],cy+p[1],12,p[2])); }
+    else if(n===7){ [[-22,-38,'#15803d'],[0,-28,'#15803d'],[22,-18,'#15803d'],[-18,12,'#dc2626'],[18,12,'#dc2626'],[-18,38,'#dc2626'],[18,38,'#dc2626']].forEach(p=>drawDot(cx+p[0],cy+p[1],11,p[2])); }
+    else if(n===8){ for(let r=0;r<4;r++)for(let k=0;k<2;k++)drawDot(cx+(k?18:-18), cy-36+r*24, 10, '#1e40af'); }
+    else if(n===9){ for(let r=0;r<3;r++)for(let k=0;k<3;k++)drawDot(cx+(k-1)*24, cy+(r-1)*28, 10, r===0?'#1e40af':r===1?'#dc2626':'#15803d'); }
+  }
+
+  // 第 1 列：條子 (一條 ~ 九條)
+  const drawStick = (x, y, h, color) => {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.roundRect(x-5, y-h/2, 10, h, 4); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillRect(x-2, y-2, 4, 4);
+  };
+  for(let col=0; col<9; col++){
+    drawTileBase(1, col);
+    const cx = col*cw+50, cy = ch+65, n = col+1;
+    if(n===1){ drawText(1, col, '🀐', '', '#15803d', '', true); }
+    else if(n===2){ drawStick(cx, cy-22, 34, '#15803d'); drawStick(cx, cy+22, 34, '#15803d'); }
+    else if(n===3){ drawStick(cx, cy-22, 34, '#15803d'); drawStick(cx-18, cy+22, 34, '#15803d'); drawStick(cx+18, cy+22, 34, '#15803d'); }
+    else if(n===4){ [[-16,-22],[16,-22],[-16,22],[16,22]].forEach(p=>drawStick(cx+p[0],cy+p[1],34,'#15803d')); }
+    else if(n===5){ [[-22,-22,'#15803d'],[22,-22,'#15803d'],[0,0,'#dc2626'],[-22,22,'#15803d'],[22,22,'#15803d']].forEach(p=>drawStick(cx+p[0],cy+p[1],32,p[2])); }
+    else if(n===6){ [[-20,-22],[0,-22],[20,-22],[-20,22],[0,22],[20,22]].forEach(p=>drawStick(cx+p[0],cy+p[1],32,'#15803d')); }
+    else if(n===7){ drawStick(cx, cy-32, 24, '#dc2626'); [[-20,0,'#15803d'],[0,0,'#1e40af'],[20,0,'#15803d'],[-20,30,'#15803d'],[0,30,'#1e40af'],[20,30,'#15803d']].forEach(p=>drawStick(cx+p[0],cy+p[1],24,p[2])); }
+    else if(n===8){
+      // 八條：上下對稱 W 與 M 竹節紋（貼近參考圖樣式）
+      const draw8Part = (pts) => {
+        ctx.strokeStyle = '#3d8b6b';
+        ctx.lineWidth = 11.5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        pts.forEach((p, idx) => idx === 0 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]));
+        ctx.stroke();
+
+        // 在每段線條 1/3 與 2/3 處繪製雙竹節圓凸
+        ctx.fillStyle = '#3d8b6b';
+        pts.forEach((p, idx) => {
+          if (idx < pts.length - 1) {
+            const p2 = pts[idx + 1];
+            [0.32, 0.68].forEach(t => {
+              const mx = p[0] + (p2[0] - p[0]) * t;
+              const my = p[1] + (p2[1] - p[1]) * t;
+              ctx.beginPath();
+              ctx.arc(mx, my, 5.2, 0, Math.PI * 2);
+              ctx.fill();
+            });
+          }
+        });
+
+        // 內部白色細線
+        ctx.strokeStyle = '#fdfcf8';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        pts.forEach((p, idx) => idx === 0 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]));
+        ctx.stroke();
+      };
+
+      // 上半部：W 型
+      draw8Part([
+        [cx - 24, cy - 39],
+        [cx - 24, cy - 11],
+        [cx,      cy - 29],
+        [cx + 24, cy - 11],
+        [cx + 24, cy - 39]
+      ]);
+
+      // 下半部：M 型
+      draw8Part([
+        [cx - 24, cy + 39],
+        [cx - 24, cy + 11],
+        [cx,      cy + 29],
+        [cx + 24, cy + 11],
+        [cx + 24, cy + 39]
+      ]);
+    }
+    else if(n===9){ for(let r=0;r<3;r++)for(let k=0;k<3;k++)drawStick(cx+(k-1)*22, cy+(r-1)*30, 24, k===1?'#dc2626':'#15803d'); }
+  }
+
+  // 第 2 列：萬子 (一萬 ~ 九萬)
+  const wanNums = ['一','二','三','四','五','六','七','八','九'];
+  wanNums.forEach((w, col) => { drawTileBase(2, col); drawText(2, col, w, '萬', '#1e3a8a', '#dc2626'); });
+
+  // 第 3 列：風牌、三元牌、牌背
+  ['東','南','西','北'].forEach((w, col) => { drawTileBase(3, col); drawText(3, col, w, '', '#1e3a8a', '', true); });
+  drawTileBase(3, 4); drawText(3, 4, '中', '', '#dc2626', '', true);
+  drawTileBase(3, 5); drawText(3, 5, '發', '', '#15803d', '', true);
+  drawTileBase(3, 6);
+  ctx.strokeStyle = '#1e3a8a'; ctx.lineWidth = 4; ctx.strokeRect(6*cw+22, 3*ch+22, cw-44, ch-44);
+  drawTileBase(3, 7, true);
+  drawTileBase(3, 8, true);
+
+  // 第 4 列：花牌
+  const fls = [['1','春','#15803d','#dc2626'],['2','夏','#15803d','#dc2626'],['3','秋','#15803d','#dc2626'],['4','冬','#15803d','#dc2626'],
+               ['梅','1','#1e3a8a','#dc2626'],['蘭','2','#1e3a8a','#dc2626'],['菊','3','#1e3a8a','#dc2626'],['竹','4','#1e3a8a','#dc2626']];
+  fls.forEach((f, col) => { drawTileBase(4, col); drawText(4, col, f[0], f[1], f[2], f[3]); });
+  drawTileBase(4, 8, true);
+
+  spriteUrl = c.toDataURL('image/png');
+  document.documentElement.style.setProperty('--tile-img', `url('${spriteUrl}')`);
 })();
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -302,7 +359,6 @@ function pub(){
     if(G.mode==='c')G.wait.forEach(i=>O[i]=G.opts[i]);
     else if(!G.seats[G.turn].b){
       const hd=G.hands[G.turn],c=cnt(hd),ms=G.mel[G.turn];
-      // 檢查是否有已「碰」出的牌，且手牌中有第 4 張可進行「加槓（補槓）」
       const bgList = G.drew && G.wall.length > 16
         ? [...new Set(ms.filter(m => m.k === 'pon' && hd.includes(m.ts[0])).map(m => m.ts[0]))]
         : [];
@@ -374,7 +430,6 @@ function sync(){
 function bot(s){
   const hd=G.hands[s];
   if(G.drew&&win(hd))return fin(s,1);
-  // 人機若上一輪碰過，這輪摸到第 4 張也自動加槓
   if(G.drew && G.wall.length > 16){
     const ponMeld = G.mel[s].find(m => m.k === 'pon' && hd.includes(m.ts[0]));
     if(ponMeld) return bg(s, ponMeld.ts[0]);
@@ -400,7 +455,6 @@ function disc(s,t){
     const x=(s+k)%4,h2=G.hands[x],n=h2.filter(v=>v===t).length,o={};
     if(win([...h2,t]))o.hu=1;
     if(n>=2)o.pon=1;
-    // 【規則修改】k===1 為打牌者的下家（即打牌者是你的上家），禁止直接明槓上家的牌，僅對家(k===2)與下家(k===3)可直接明槓
     if(k!==1 && n>=3 && G.wall.length>16)o.gang=1;
     if(k===1&&t<27){
       const q=t%9,has=v=>h2.includes(v),ch=[];
@@ -445,7 +499,6 @@ function ag(s,t){
   sync();
 }
 
-/* ---------- 新增：加槓（補槓）處理函式 ---------- */
 function bg(s,t){
   const hd=G.hands[s], idx=hd.indexOf(t);
   const m=G.mel[s].find(x=>x.k==='pon' && x.ts[0]===t);
@@ -687,8 +740,8 @@ function draw0(){
   ]);
 
   const atlasPreview = h('div','card',null,[
-    h('b',0,'🀄 麻將雪碧圖裁切預覽（全部 42 張 + 牌背）'),
-    h('div','mini','以下為自動從雪碧圖裁切出的每一張牌面：'),
+    h('b',0,'🀄 麻將牌面預覽（全部 42 張 + 牌背）'),
+    h('div','mini','以下為內建繪製出的每一張牌面：'),
     h('div','atlas-box',null,[
       h('div','mini','筒子（一筒～九筒）：'),
       h('div','row',null,[9,10,11,12,13,14,15,16,17].map(t=>tz(t))),
