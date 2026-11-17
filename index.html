@@ -1028,7 +1028,6 @@ function grp(ms, c, isOwner=false){
 
 function card(i,me){
   const x=S.seats[i],w=NM[(i-S.dealer+4)%4];
-  const backs = Array.from({length: Math.min(S.cnt[i]||0, 16)}, ()=>tz(-1, 'sm'));
   const titleRow = h('div',0,x.n+(i===S.dealer?' 莊':'')+(x.b?' 🤖':''));
   if(S.shout && S.shout.s === i){
     titleRow.append(h('span','shout',S.shout.text));
@@ -1036,8 +1035,7 @@ function card(i,me){
   return h('div','pl'+(S.ph==='play'&&S.turn===i?' on':''),null,[
     titleRow,
     h('div','mini',w+'家 '+S.sc[i]+'分 手牌'+(S.cnt[i]||0)+'張'),
-    h('div','hand',null,[...grp(S.mel[i],'sm', i===me),...S.fl[i].map(t=>tz(t,'sm'))]),
-    h('div','row',null,backs)
+    h('div','hand',null,[...grp(S.mel[i],'sm', i===me),...S.fl[i].map(t=>tz(t,'sm')])
   ]);
 }
 
@@ -1099,7 +1097,27 @@ function table(me){
       h('b',0,S.seats[r.w].n+(r.zm?' 自摸！':r.extra==='rob'?' 搶槓胡！（'+S.seats[r.f].n+' 被搶槓）':' 胡牌！（'+S.seats[r.f].n+' 放槍）')),
       h('div',0,r.L.join('、')||'無台'),
       h('div',0,'共 '+r.tai+' 台，每家賠 '+r.a+' 分'),
-      h('div','hand',null,[...grp(S.mel[r.w]||[],'sm',true),...(S.H[r.w]||[]).slice().sort((a,b)=>a-b).map(t=>tz(t,'sm'))])
+      (() => {
+    const rTiles = [...(S.H[r.w] || [])].sort((a,b)=>a-b);
+    let winTile = null;
+    if(r.w != null && S.last && S.last.t != null && !r.zm){
+      // 放槍或搶槓胡：將胡的那一張牌從手牌中抽出來單獨顯示
+      const idx = rTiles.indexOf(S.last.t);
+      if(idx >= 0) {
+        winTile = rTiles.splice(idx, 1)[0];
+      }
+    } else if(r.w != null && r.zm && rTiles.length % 3 === 2) {
+      // 自摸：摸進的最後一張牌即為自摸牌，抽出來單獨顯示
+      winTile = rTiles.pop();
+    }
+    const handEls = rTiles.map(t => tz(t, 'sm'));
+    const kidsArr = [...grp(S.mel[r.w] || [], 'sm', true), ...handEls];
+    if(winTile != null) {
+      kidsArr.push(h('span', 'gap'));
+      kidsArr.push(tz(winTile, 'sm hl'));
+    }
+    return h('div', 'hand', null, kidsArr);
+  })()
     ]));
     kids.push(host?btn('下一局',()=>send('next')):h('div','mini','等待房主開始下一局'));
   }
