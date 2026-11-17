@@ -37,11 +37,13 @@ button.demo{background:#d97706;border-color:#d97706;font-weight:600}
 .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .code{font-size:34px;letter-spacing:6px;font-weight:800;color:var(--ac)}
 .opp{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-.pl{border:1px solid var(--bd);border-radius:10px;padding:6px;background:var(--card);font-size:13px;min-width:0}
+.pl{border:1px solid var(--bd);border-radius:10px;padding:6px;background:var(--card);font-size:13px;min-width:0;position:relative}
 .pl.on{border-color:var(--ac);box-shadow:0 0 0 2px var(--ac)}
 .felt{background:#1d5a3f;border-radius:12px;padding:10px;color:#fff;margin:8px 0;box-shadow:inset 0 2px 8px rgba(0,0,0,0.35)}
 .pool{display:flex;flex-wrap:wrap;min-height:38px;margin-bottom:4px}
 .pool b{font-size:12px;width:100%;font-weight:600;opacity:.9;margin-bottom:2px}
+.shout{display:inline-block;background:#ffd54a;color:#111;font-weight:800;font-size:12px;padding:1px 7px;border-radius:99px;margin-left:6px;animation:pop 0.25s ease}
+@keyframes pop{0%{transform:scale(0.6);opacity:0}80%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}}
 
 /* ---------- 麻將牌面雪碧圖樣式 (9欄 x 5列) ---------- */
 .t{
@@ -352,6 +354,79 @@ function tally(s,zm,extra){
   return{tai,L};
 }
 
+/* ---------- 人機智慧評估工具 ---------- */
+// 計算手牌的「進張潛力分數」（越多順子搭子、刻子、對子分數越高）
+function evalHandScore(hd, seat){
+  const c = cnt(hd);
+  let score = 0;
+  const windTile = 27 + (seat - G.dealer + 4) % 4;
+  for(let i = 0; i < 34; i++){
+    if(!c[i]) continue;
+    const isHonor = i >= 27;
+    const isValueHonor = i >= 31 || i === 27 || i === windTile;
+    if(c[i] >= 3) score += isValueHonor ? 14 : 11;
+    else if(c[i] === 2) score += isValueHonor ? 6 : 4.5;
+    else if(isHonor) score -= 2.5; // 孤張字牌扣分
+  }
+  // 評估順子與兩面/嵌張搭子
+  for(let suit = 0; suit < 3; suit++){
+    const base = suit * 9;
+    for(let n = 0; n < 9; n++){
+      const t = base + n;
+      if(!c[t]) continue;
+      if(n <= 6 && c[t+1] && c[t+2]) score += 9; // 完整順子
+      if(n <= 7 && c[t+1]) score += (n > 0 && n < 7) ? 3.5 : 2.2; // 兩面搭子優於邊張
+      if(n <= 6 && c[t+2]) score += 2.0; // 嵌張搭子
+    }
+  }
+  return score;
+}
+
+// 決定人機面對別家打牌時的吃、碰、槓、胡決策
+function botDecideClaim(s, t, o){
+  if(o.hu) return 'hu';
+  const hd = G.hands[s];
+  const windTile = 27 + (s - G.dealer + 4) % 4;
+  const isValueHonor = t >= 31 || t === 27 || t === windTile;
+  const baseScore = evalHandScore(hd, s);
+
+  // 1. 評估明槓：手牌有3張相同，通常直接槓（除非會拆掉關鍵順子且手牌極好）
+  if(o.gang){
+    const afterGang = hd.filter(x => x !== t);
+    if(evalHandScore(afterGang, s) >= baseScore - 14) return 'gang';
+  }
+
+  // 2. 評估碰牌：
+  if(o.pon){
+    // 中發白、圈風、門風，幾乎必碰（95% 機率）
+    if(isValueHonor && Math.random() < 0.95) return 'pon';
+    // 其他牌：比較碰牌後剩餘手牌的進張分數，若有提升或保持面子結構（且沒有拆掉完整順子）就碰
+    const afterPon = hd.slice();
+    for(let k = 0; k < 2; k++) afterPon.splice(afterPon.indexOf(t), 1);
+    const newScore = evalHandScore(afterPon, s) + 11; // 加上桌面上已完成1組刻子的價值
+    if(newScore >= baseScore - 1.0 && Math.random() < 0.85) return 'pon';
+  }
+
+  // 3. 評估吃牌（僅下家有 o.chi）：
+  if(o.chi && o.chi.length){
+    let bestChi = null;
+    let bestScore = baseScore;
+    for(const pair of o.chi){
+      const afterChi = hd.slice();
+      pair.forEach(v => afterChi.splice(afterChi.indexOf(v), 1));
+      const newScore = evalHandScore(afterChi, s) + 9.5; // 加上桌面上已完成1組順子的價值
+      // 只有吃牌能讓手牌整體結構變好（例如把孤張/嵌張變成完整面子），才執行吃牌
+      if(newScore > bestScore + 0.5){
+        bestScore = newScore;
+        bestChi = pair;
+      }
+    }
+    if(bestChi && Math.random() < 0.8) return bestChi;
+  }
+
+  return 'pass';
+}
+
 /* ---------- 房主引擎 ---------- */
 const seatOf=p=>G.seats.findIndex(x=>x&&x.p===p);
 function pub(){
@@ -372,7 +447,6 @@ function pub(){
     }
   }
   const b=G.ph==='lobby';
-  // 隱藏其他玩家的暗槓牌面（傳送 [-1,-1,-1,-1]），遊戲結束結算時才公開
   const safeMel = G.mel.map((ms, idx) => ms.map(m => {
     if (m.k === 'ag' && G.ph !== 'end') {
       return { k: 'ag', ts: [-1, -1, -1, -1], realTs: m.ts };
@@ -380,7 +454,7 @@ function pub(){
     return m;
   }));
   return{ph:G.ph,code,seats:G.seats,sc:G.sc,dealer:G.dealer,streak:G.streak,turn:G.turn,mode:G.mode,drew:G.drew,wl:b?0:G.wall.length,
-    disc:G.disc,mel:safeMel,fl:G.fl,cnt:b?[]:G.hands.map(x=>x.length),last:G.last,wait:G.wait,res:G.res,H,O};
+    disc:G.disc,mel:safeMel,fl:G.fl,cnt:b?[]:G.hands.map(x=>x.length),last:G.last,wait:G.wait,res:G.res,shout:G.shout,H,O};
 }
 
 function bc(){
@@ -398,6 +472,17 @@ function bc(){
   render();
 }
 
+function triggerShout(s, text){
+  G.shout = { s, text, id: Date.now() + Math.random() };
+  const sid = G.shout.id;
+  setTimeout(()=>{
+    if(G && G.shout && G.shout.id === sid){
+      G.shout = null;
+      bc();
+    }
+  }, 1800);
+}
+
 function start(){
   G.seats.forEach((x,i)=>{if(!x)G.seats[i]={n:'人機'+(i+1),p:'bot'+i,b:1}});
   newRound();
@@ -410,7 +495,7 @@ function newRound(){
   for(let i=w.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[w[i],w[j]]=[w[j],w[i]]}
   Object.assign(G,{
     wall:w,hands:[[],[],[],[]],mel:[[],[],[],[]],fl:[[],[],[],[]],disc:[[],[],[],[]],
-    last:null,res:null,wait:[],opts:{},claims:{},drew:false,fromGang:false,pendingBg:null,
+    last:null,res:null,wait:[],opts:{},claims:{},drew:false,fromGang:false,pendingBg:null,shout:null,
     passedHu:[false,false,false,false]
   });
   for(let r=0;r<16;r++)for(let s=0;s<4;s++)G.hands[s].push(G.wall.pop());
@@ -446,27 +531,51 @@ function sync(){
   bc();
   if(G.ph!=='play'||G.mode!=='d')return;
   const s=G.turn,k=++G.tk;
-  if(G.seats[s].b)setTimeout(()=>{if(k===G.tk)bot(s)},700);
+  // 模擬真人思考時間（650ms ~ 1150ms）
+  const delay = 650 + Math.floor(Math.random() * 500);
+  if(G.seats[s].b)setTimeout(()=>{if(k===G.tk)bot(s)}, delay);
 }
 
 function bot(s){
   const hd=G.hands[s];
-  if(G.drew&&win(hd))return fin(s,1,G.fromGang?'gang':null);
+  // 1. 自摸胡牌
+  if(G.drew&&win(hd)){
+    triggerShout(s, '自摸！');
+    return fin(s,1,G.fromGang?'gang':null);
+  }
+  // 2. 暗槓判斷（手牌有4張相同）
   if(G.drew && G.wall.length > 16){
+    const c = cnt(hd);
+    const agTile = hd.find(t => c[t] === 4);
+    if(agTile != null){
+      // 確認暗槓不會嚴重破壞順子結構才槓
+      const withoutAg = hd.filter(t => t !== agTile);
+      if(evalHandScore(withoutAg, s) >= evalHandScore(hd, s) - 15){
+        return ag(s, agTile);
+      }
+    }
+    // 3. 加槓判斷（已碰且摸到第4張）
     const ponMeld = G.mel[s].find(m => m.k === 'pon' && hd.includes(m.ts[0]));
     if(ponMeld) return initiateBg(s, ponMeld.ts[0]);
   }
-  const c=cnt(hd);let b=hd[0],bv=1e9;
-  for(const t of hd){
-    let v=c[t]*4;
-    if(t<27){
-      const n=t%9;
-      v+=(n>0?c[t-1]*3:0)+(n<8?c[t+1]*3:0)+(n>1?c[t-2]*1.5:0)+(n<7?c[t+2]*1.5:0);
-    }else v+=c[t]>1?4:-2;
-    v+=Math.random();
-    if(v<bv){bv=v;b=t}
+  // 4. 捨牌判斷：評估打出每張牌後剩餘手牌的進張價值，保留最高分的手牌組合
+  let bestTile = hd[0];
+  let bestRemainScore = -1e9;
+  const seen = new Set();
+  for(let i = 0; i < hd.length; i++){
+    const t = hd[i];
+    if(seen.has(t)) continue;
+    seen.add(t);
+    const remain = hd.slice();
+    remain.splice(i, 1);
+    // 加上微量隨機擾動避免死板
+    const sc = evalHandScore(remain, s) + (Math.random() * 0.6);
+    if(sc > bestRemainScore){
+      bestRemainScore = sc;
+      bestTile = t;
+    }
   }
-  disc(s,b);
+  disc(s, bestTile);
 }
 
 function disc(s,t){
@@ -474,6 +583,7 @@ function disc(s,t){
   hd.splice(i,1);hd.sort((a,b)=>a-b);
   G.passedHu[s]=false;
   G.disc[s].push(t);G.last={t,f:s};G.mode='c';G.tk++;G.drew=false;G.fromGang=false;G.opts={};G.claims={};G.wait=[];
+  let botHasClaim = false;
   for(let k=1;k<4;k++){
     const x=(s+k)%4,h2=G.hands[x],n=h2.filter(v=>v===t).length,o={};
     if(!G.passedHu[x] && win([...h2,t]))o.hu=1;
@@ -488,19 +598,28 @@ function disc(s,t){
     }
     if(Object.keys(o).length){
       G.opts[x]=o;
-      if(G.seats[x].b)G.claims[x]=o.hu?'hu':'pass';
-      else G.wait.push(x);
+      if(G.seats[x].b){
+        const decision = botDecideClaim(x, t, o);
+        G.claims[x] = decision;
+        if(decision !== 'pass') botHasClaim = true;
+      } else {
+        G.wait.push(x);
+      }
     }
   }
   bc();
-  if(!G.wait.length)setTimeout(resolve,550);
-  else timer=setTimeout(()=>{
-    G.wait.forEach(x=>{
-      if(G.opts[x]&&G.opts[x].hu)G.passedHu[x]=true;
-      G.claims[x]='pass';
-    });
-    G.wait=[];resolve();
-  },12000);
+  if(!G.wait.length){
+    // 若人機要吃/碰/槓/胡，稍微停頓 700ms 模擬真人反應喊牌
+    setTimeout(resolve, botHasClaim ? 700 : 450);
+  } else {
+    timer=setTimeout(()=>{
+      G.wait.forEach(x=>{
+        if(G.opts[x]&&G.opts[x].hu)G.passedHu[x]=true;
+        G.claims[x]='pass';
+      });
+      G.wait=[];resolve();
+    },12000);
+  }
 }
 
 function resolve(){
@@ -508,15 +627,23 @@ function resolve(){
   if(G.mode!=='c'||G.ph!=='play')return;
   const d=G.last.f,t=G.last.t,ord=[1,2,3].map(k=>(d+k)%4),cl=G.claims;
   ord.forEach(s=>{if(G.opts[s]&&G.opts[s].hu&&cl[s]!=='hu')G.passedHu[s]=true});
-  const hu=ord.find(s=>cl[s]==='hu');if(hu!=null)return fin(hu,0);
+  const hu=ord.find(s=>cl[s]==='hu');
+  if(hu!=null){
+    triggerShout(hu, '胡！');
+    return fin(hu,0);
+  }
   const pg=ord.find(s=>cl[s]==='pon'||cl[s]==='gang'),ch=ord.find(s=>Array.isArray(cl[s])),s=pg!=null?pg:ch;
   if(s==null)return draw((d+1)%4, false);
   const c=cl[s],hd=G.hands[s];G.disc[d].pop();let ts,k;
   if(Array.isArray(c)){
     k='chi';
     ts=[c[0], t, c[1]];
+    triggerShout(s, '吃！');
+  } else {
+    k=c;
+    ts=Array(c==='gang'?4:3).fill(t);
+    triggerShout(s, c==='gang' ? '槓！' : '碰！');
   }
-  else{k=c;ts=Array(c==='gang'?4:3).fill(t)}
   const rm=ts.slice();rm.splice(rm.indexOf(t),1);rm.forEach(v=>hd.splice(hd.indexOf(v),1));
   G.mel[s].push({k,ts});G.turn=s;G.mode='d';G.last=null;
   G.passedHu[s]=false;
@@ -531,6 +658,7 @@ function ag(s,t){
   G.mel[s].push({k:'ag',ts:[t,t,t,t]});
   G.hands[s].push(pull(s));
   G.fromGang=true;
+  triggerShout(s, '暗槓！');
   sync();
 }
 
@@ -543,6 +671,7 @@ function initiateBg(s, t){
   G.mode='bg_c'; G.tk++; G.opts={}; G.claims={}; G.wait=[];
   G.pendingBg={s, t};
   G.last={t, f:s};
+  triggerShout(s, '加槓！');
 
   for(let k=1;k<4;k++){
     const x=(s+k)%4, h2=G.hands[x];
@@ -553,7 +682,7 @@ function initiateBg(s, t){
     }
   }
   bc();
-  if(!G.wait.length) setTimeout(resolveBg, 400);
+  if(!G.wait.length) setTimeout(resolveBg, 450);
   else timer=setTimeout(()=>{
     G.wait.forEach(x=>{G.passedHu[x]=true; G.claims[x]='pass';});
     G.wait=[]; resolveBg();
@@ -572,6 +701,7 @@ function resolveBg(){
     const hd=G.hands[s], idx=hd.indexOf(t);
     if(idx>=0) hd.splice(idx,1);
     G.pendingBg=null;
+    triggerShout(hu, '搶槓胡！');
     return fin(hu, 0, 'rob');
   }
 
@@ -803,7 +933,7 @@ function draw0(){
     h('div','row',null,[
       btn('⚡ 單機快速試玩（立即預覽麻將牌面）', ()=>startQuickDemo(), 'demo')
     ]),
-    h('div','mini','免等待連線，立即開啟牌桌與 3 位電腦對戰並檢視實體麻將圖片效果。')
+    h('div','mini','免等待連線，立即開啟牌桌與 3 位智慧人機對戰。')
   ]);
 
   const joinCard = h('div','card',null,[
@@ -899,8 +1029,12 @@ function grp(ms, c, isOwner=false){
 function card(i,me){
   const x=S.seats[i],w=NM[(i-S.dealer+4)%4];
   const backs = Array.from({length: Math.min(S.cnt[i]||0, 16)}, ()=>tz(-1, 'sm'));
+  const titleRow = h('div',0,x.n+(i===S.dealer?' 莊':'')+(x.b?' 🤖':''));
+  if(S.shout && S.shout.s === i){
+    titleRow.append(h('span','shout',S.shout.text));
+  }
   return h('div','pl'+(S.ph==='play'&&S.turn===i?' on':''),null,[
-    h('div',0,x.n+(i===S.dealer?' 莊':'')+(x.b?' 🤖':'')),
+    titleRow,
     h('div','mini',w+'家 '+S.sc[i]+'分 手牌'+(S.cnt[i]||0)+'張'),
     h('div','hand',null,[...grp(S.mel[i],'sm', i===me),...S.fl[i].map(t=>tz(t,'sm'))]),
     h('div','row',null,backs)
