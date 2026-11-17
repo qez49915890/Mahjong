@@ -12,7 +12,6 @@
   --card:#fff;
   --bd:#d8d2c4;
   --ac:#1d6b4a;
-  --tile-img: url('image_d1f20b.jpg');
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px)
@@ -77,6 +76,10 @@ button.demo{background:#d97706;border-color:#d97706;font-weight:600}
   transform:translateY(-10px);
   box-shadow:0 6px 8px rgba(0,0,0,0.35);
   outline:2px solid var(--ac);
+}
+.t.ag-self{
+  opacity:0.78;
+  outline:1.5px dashed #1d6b4a;
 }
 .hand{display:flex;flex-wrap:wrap;align-items:flex-end;min-height:62px;padding-top:10px}
 .hand .t{cursor:pointer}
@@ -199,7 +202,7 @@ let spriteUrl = '';
     else if(n===6){ [[-20,-22],[0,-22],[20,-22],[-20,22],[0,22],[20,22]].forEach(p=>drawStick(cx+p[0],cy+p[1],32,'#15803d')); }
     else if(n===7){ drawStick(cx, cy-32, 24, '#dc2626'); [[-20,0,'#15803d'],[0,0,'#1e40af'],[20,0,'#15803d'],[-20,30,'#15803d'],[0,30,'#1e40af'],[20,30,'#15803d']].forEach(p=>drawStick(cx+p[0],cy+p[1],24,p[2])); }
     else if(n===8){
-      // 八條：上下對稱 W 與 M 竹節紋（貼近參考圖樣式）
+      // 八條：上下對稱 W 與 M 竹節紋
       const draw8Part = (pts) => {
         ctx.strokeStyle = '#3d8b6b';
         ctx.lineWidth = 11.5;
@@ -209,7 +212,6 @@ let spriteUrl = '';
         pts.forEach((p, idx) => idx === 0 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]));
         ctx.stroke();
 
-        // 在每段線條 1/3 與 2/3 處繪製雙竹節圓凸
         ctx.fillStyle = '#3d8b6b';
         pts.forEach((p, idx) => {
           if (idx < pts.length - 1) {
@@ -224,7 +226,6 @@ let spriteUrl = '';
           }
         });
 
-        // 內部白色細線
         ctx.strokeStyle = '#fdfcf8';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -232,7 +233,6 @@ let spriteUrl = '';
         ctx.stroke();
       };
 
-      // 上半部：W 型
       draw8Part([
         [cx - 24, cy - 39],
         [cx - 24, cy - 11],
@@ -241,7 +241,6 @@ let spriteUrl = '';
         [cx + 24, cy - 39]
       ]);
 
-      // 下半部：M 型
       draw8Part([
         [cx - 24, cy + 39],
         [cx - 24, cy + 11],
@@ -335,11 +334,14 @@ function win(a,pg=1,cg=1,pf=()=>1){
   for(let i=0;i<34;i++)if(c[i]>=2&&pf(i)){c[i]-=2;const r=sets(c,pg,cg);c[i]+=2;if(r)return true}
   return false;
 }
-function tally(s,zm){
+function tally(s,zm,extra){
   const hd=G.hands[s],ms=G.mel[s],w=(s-G.dealer+4)%4;let tai=0;const L=[],A=(n,x)=>{tai+=x;L.push(n+x+'台')};
   const all=[...hd,...ms.flatMap(m=>m.ts)],c=cnt(all);
   if(s===G.dealer){A('莊家',1);if(G.streak)A('連'+G.streak+'拉'+G.streak,2*G.streak)}
-  if(ms.every(m=>m.k==='ag'))A('門清',1);if(zm)A('自摸',1);
+  if(ms.every(m=>m.k==='ag'))A('門清',1);
+  if(zm)A('自摸',1);
+  if(extra==='gang')A('槓上開花',1);
+  if(extra==='rob')A('搶槓胡',1);
   G.fl[s].forEach(f=>{if(f%4===w)A('花牌',1)});
   [31,32,33].forEach(t=>{if(c[t]>=3)A(ZN[t-31],1)});
   if(c[27+w]>=3)A('門風',1);if(c[27]>=3)A('圈風',1);
@@ -356,7 +358,7 @@ function pub(){
   const H={},O={};
   G.seats.forEach((x,i)=>{if(x&&!x.b&&G.ph!=='lobby')H[i]=G.hands[i]});
   if(G.ph==='play'){
-    if(G.mode==='c')G.wait.forEach(i=>O[i]=G.opts[i]);
+    if(G.mode==='c'||G.mode==='bg_c')G.wait.forEach(i=>O[i]=G.opts[i]);
     else if(!G.seats[G.turn].b){
       const hd=G.hands[G.turn],c=cnt(hd),ms=G.mel[G.turn];
       const bgList = G.drew && G.wall.length > 16
@@ -370,15 +372,29 @@ function pub(){
     }
   }
   const b=G.ph==='lobby';
+  // 隱藏其他玩家的暗槓牌面（傳送 [-1,-1,-1,-1]），遊戲結束結算時才公開
+  const safeMel = G.mel.map((ms, idx) => ms.map(m => {
+    if (m.k === 'ag' && G.ph !== 'end') {
+      return { k: 'ag', ts: [-1, -1, -1, -1], realTs: m.ts };
+    }
+    return m;
+  }));
   return{ph:G.ph,code,seats:G.seats,sc:G.sc,dealer:G.dealer,streak:G.streak,turn:G.turn,mode:G.mode,drew:G.drew,wl:b?0:G.wall.length,
-    disc:G.disc,mel:G.mel,fl:G.fl,cnt:b?[]:G.hands.map(x=>x.length),last:G.last,wait:G.wait,res:G.res,H,O};
+    disc:G.disc,mel:safeMel,fl:G.fl,cnt:b?[]:G.hands.map(x=>x.length),last:G.last,wait:G.wait,res:G.res,H,O};
 }
 
 function bc(){
   if(!host||!G)return;
   const st=pub();
   S=st;
-  Object.values(conns).forEach(c=>{if(c&&c.open)c.send({type:'st',data:st})});
+  Object.values(conns).forEach(c=>{
+    if(c&&c.open){
+      const pSeat = seatOf(c.peer);
+      const customMel = st.mel.map((ms, idx) => idx === pSeat ? G.mel[idx] : ms);
+      c.send({type:'st',data:Object.assign({}, st, {mel: customMel})});
+    }
+  });
+  S = Object.assign({}, st, {mel: st.mel.map((ms, idx) => idx === 0 ? G.mel[0] : ms)});
   render();
 }
 
@@ -392,7 +408,11 @@ function newRound(){
   for(let t=0;t<34;t++)for(let k=0;k<4;k++)w.push(t);
   for(let t=34;t<42;t++)w.push(t);
   for(let i=w.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[w[i],w[j]]=[w[j],w[i]]}
-  Object.assign(G,{wall:w,hands:[[],[],[],[]],mel:[[],[],[],[]],fl:[[],[],[],[]],disc:[[],[],[],[]],last:null,res:null,wait:[],opts:{},claims:{},drew:false});
+  Object.assign(G,{
+    wall:w,hands:[[],[],[],[]],mel:[[],[],[],[]],fl:[[],[],[],[]],disc:[[],[],[],[]],
+    last:null,res:null,wait:[],opts:{},claims:{},drew:false,fromGang:false,pendingBg:null,
+    passedHu:[false,false,false,false]
+  });
   for(let r=0;r<16;r++)for(let s=0;s<4;s++)G.hands[s].push(G.wall.pop());
   for(let k=0;k<4;k++){
     const s=(G.dealer+k)%4;let hd=G.hands[s];
@@ -403,7 +423,7 @@ function newRound(){
   }
   G.hands.forEach(a=>a.sort((x,y)=>x-y));
   G.ph='play';
-  draw(G.dealer);
+  draw(G.dealer, false);
 }
 
 function pull(s){
@@ -412,11 +432,13 @@ function pull(s){
   return t;
 }
 
-function draw(s){
+function draw(s, isFromGang=false){
   if(G.wall.length<=16)return fin(null);
   let t=G.wall.pop();
   while(t>=34){G.fl[s].push(t);t=G.wall.shift()}
-  G.hands[s].push(t);G.turn=s;G.mode='d';G.drew=true;
+  G.hands[s].push(t);
+  G.turn=s;G.mode='d';G.drew=true;G.fromGang=isFromGang;
+  G.passedHu[s]=false;
   sync();
 }
 
@@ -429,10 +451,10 @@ function sync(){
 
 function bot(s){
   const hd=G.hands[s];
-  if(G.drew&&win(hd))return fin(s,1);
+  if(G.drew&&win(hd))return fin(s,1,G.fromGang?'gang':null);
   if(G.drew && G.wall.length > 16){
     const ponMeld = G.mel[s].find(m => m.k === 'pon' && hd.includes(m.ts[0]));
-    if(ponMeld) return bg(s, ponMeld.ts[0]);
+    if(ponMeld) return initiateBg(s, ponMeld.ts[0]);
   }
   const c=cnt(hd);let b=hd[0],bv=1e9;
   for(const t of hd){
@@ -450,10 +472,11 @@ function bot(s){
 function disc(s,t){
   const hd=G.hands[s],i=hd.indexOf(t);if(i<0)return;
   hd.splice(i,1);hd.sort((a,b)=>a-b);
-  G.disc[s].push(t);G.last={t,f:s};G.mode='c';G.tk++;G.drew=false;G.opts={};G.claims={};G.wait=[];
+  G.passedHu[s]=false;
+  G.disc[s].push(t);G.last={t,f:s};G.mode='c';G.tk++;G.drew=false;G.fromGang=false;G.opts={};G.claims={};G.wait=[];
   for(let k=1;k<4;k++){
     const x=(s+k)%4,h2=G.hands[x],n=h2.filter(v=>v===t).length,o={};
-    if(win([...h2,t]))o.hu=1;
+    if(!G.passedHu[x] && win([...h2,t]))o.hu=1;
     if(n>=2)o.pon=1;
     if(k!==1 && n>=3 && G.wall.length>16)o.gang=1;
     if(k===1&&t<27){
@@ -471,22 +494,33 @@ function disc(s,t){
   }
   bc();
   if(!G.wait.length)setTimeout(resolve,550);
-  else timer=setTimeout(()=>{G.wait.forEach(x=>G.claims[x]='pass');G.wait=[];resolve()},12000);
+  else timer=setTimeout(()=>{
+    G.wait.forEach(x=>{
+      if(G.opts[x]&&G.opts[x].hu)G.passedHu[x]=true;
+      G.claims[x]='pass';
+    });
+    G.wait=[];resolve();
+  },12000);
 }
 
 function resolve(){
   clearTimeout(timer);
   if(G.mode!=='c'||G.ph!=='play')return;
   const d=G.last.f,t=G.last.t,ord=[1,2,3].map(k=>(d+k)%4),cl=G.claims;
+  ord.forEach(s=>{if(G.opts[s]&&G.opts[s].hu&&cl[s]!=='hu')G.passedHu[s]=true});
   const hu=ord.find(s=>cl[s]==='hu');if(hu!=null)return fin(hu,0);
   const pg=ord.find(s=>cl[s]==='pon'||cl[s]==='gang'),ch=ord.find(s=>Array.isArray(cl[s])),s=pg!=null?pg:ch;
-  if(s==null)return draw((d+1)%4);
+  if(s==null)return draw((d+1)%4, false);
   const c=cl[s],hd=G.hands[s];G.disc[d].pop();let ts,k;
-  if(Array.isArray(c)){k='chi';ts=[...c,t].sort((a,b)=>a-b)}
+  if(Array.isArray(c)){
+    k='chi';
+    ts=[c[0], t, c[1]];
+  }
   else{k=c;ts=Array(c==='gang'?4:3).fill(t)}
   const rm=ts.slice();rm.splice(rm.indexOf(t),1);rm.forEach(v=>hd.splice(hd.indexOf(v),1));
   G.mel[s].push({k,ts});G.turn=s;G.mode='d';G.last=null;
-  if(k==='gang'){hd.push(pull(s));G.drew=true}else G.drew=false;
+  G.passedHu[s]=false;
+  if(k==='gang'){hd.push(pull(s));G.drew=true;G.fromGang=true}else{G.drew=false;G.fromGang=false}
   hd.sort((a,b)=>a-b);if(k==='gang')hd.push(hd.splice(hd.length-1,1)[0]);
   sync();
 }
@@ -496,30 +530,81 @@ function ag(s,t){
   G.hands[s]=hd.filter(x=>x!==t);
   G.mel[s].push({k:'ag',ts:[t,t,t,t]});
   G.hands[s].push(pull(s));
+  G.fromGang=true;
   sync();
 }
 
-function bg(s,t){
+/* ---------- 加槓與搶槓胡流程 ---------- */
+function initiateBg(s, t){
   const hd=G.hands[s], idx=hd.indexOf(t);
   const m=G.mel[s].find(x=>x.k==='pon' && x.ts[0]===t);
   if(idx<0 || !m) return;
-  hd.splice(idx,1);
-  m.k='bg';
-  m.ts=[t,t,t,t];
-  hd.push(pull(s));
+
+  G.mode='bg_c'; G.tk++; G.opts={}; G.claims={}; G.wait=[];
+  G.pendingBg={s, t};
+  G.last={t, f:s};
+
+  for(let k=1;k<4;k++){
+    const x=(s+k)%4, h2=G.hands[x];
+    if(!G.passedHu[x] && win([...h2, t])){
+      G.opts[x]={hu:1};
+      if(G.seats[x].b) G.claims[x]='hu';
+      else G.wait.push(x);
+    }
+  }
+  bc();
+  if(!G.wait.length) setTimeout(resolveBg, 400);
+  else timer=setTimeout(()=>{
+    G.wait.forEach(x=>{G.passedHu[x]=true; G.claims[x]='pass';});
+    G.wait=[]; resolveBg();
+  }, 10000);
+}
+
+function resolveBg(){
+  clearTimeout(timer);
+  if(G.mode!=='bg_c'||G.ph!=='play'||!G.pendingBg) return;
+  const {s, t} = G.pendingBg;
+  const ord=[1,2,3].map(k=>(s+k)%4), cl=G.claims;
+  ord.forEach(x=>{if(G.opts[x]&&G.opts[x].hu&&cl[x]!=='hu')G.passedHu[x]=true});
+
+  const hu=ord.find(x=>cl[x]==='hu');
+  if(hu!=null){
+    const hd=G.hands[s], idx=hd.indexOf(t);
+    if(idx>=0) hd.splice(idx,1);
+    G.pendingBg=null;
+    return fin(hu, 0, 'rob');
+  }
+
+  const hd=G.hands[s], idx=hd.indexOf(t);
+  const m=G.mel[s].find(x=>x.k==='pon' && x.ts[0]===t);
+  if(idx>=0 && m){
+    hd.splice(idx,1);
+    m.k='bg';
+    m.ts=[t,t,t,t];
+    hd.push(pull(s));
+  }
+  G.pendingBg=null;
+  G.last=null;
+  G.mode='d';
+  G.drew=true;
+  G.fromGang=true;
   sync();
 }
 
-function fin(w,zm){
+function fin(w,zm,extra){
   G.ph='end';G.tk++;clearTimeout(timer);G.wait=[];
   if(w==null)G.res={draw:1};
   else{
     let f=-1;
-    if(!zm){f=G.last.f;G.hands[w].push(G.last.t);G.disc[f].pop()}
-    const r=tally(w,zm),a=3+r.tai;
+    if(!zm){
+      f=G.last.f;
+      G.hands[w].push(G.last.t);
+      if(extra!=='rob') G.disc[f].pop();
+    }
+    const r=tally(w,zm,extra),a=3+r.tai;
     if(zm){for(let i=0;i<4;i++)if(i!==w){G.sc[i]-=a;G.sc[w]+=a}}
     else{G.sc[f]-=a;G.sc[w]+=a}
-    G.res={w,zm,f,tai:r.tai,L:r.L,a};
+    G.res={w,zm,f,tai:r.tai,L:r.L,a,extra};
   }
   bc();
 }
@@ -542,15 +627,20 @@ function act(s,d){
   if(G.mode==='d'&&G.turn===s){
     const hd=G.hands[s];
     if(a==='disc'&&hd.includes(d.t))disc(s,d.t);
-    else if(a==='hu'&&G.drew&&win(hd))fin(s,1);
+    else if(a==='hu'&&G.drew&&win(hd))fin(s,1,G.fromGang?'gang':null);
     else if(a==='ag'&&G.drew&&G.wall.length>16&&hd.filter(x=>x===d.t).length===4)ag(s,d.t);
-    else if(a==='bg'&&G.drew&&G.wall.length>16&&hd.includes(d.t)&&G.mel[s].some(m=>m.k==='pon'&&m.ts[0]===d.t))bg(s,d.t);
+    else if(a==='bg'&&G.drew&&G.wall.length>16&&hd.includes(d.t)&&G.mel[s].some(m=>m.k==='pon'&&m.ts[0]===d.t))initiateBg(s,d.t);
   }else if(G.mode==='c'&&G.wait.includes(s)){
     const o=G.opts[s];let c=null;
     if(a==='pass')c='pass';
     else if((a==='hu'||a==='pon'||a==='gang')&&o[a])c=a;
     else if(a==='chi'&&o.chi&&o.chi[d.i])c=o.chi[d.i];
     if(c){G.claims[s]=c;G.wait=G.wait.filter(x=>x!==s);G.wait.length?bc():resolve()}
+  }else if(G.mode==='bg_c'&&G.wait.includes(s)){
+    const o=G.opts[s];let c=null;
+    if(a==='pass')c='pass';
+    else if(a==='hu'&&o.hu)c='hu';
+    if(c){G.claims[s]=c;G.wait=G.wait.filter(x=>x!==s);G.wait.length?bc():resolveBg()}
   }
 }
 
@@ -699,7 +789,7 @@ function tz(t, c=''){
   const posX = (col / 8) * 100;
   const posY = (row / 4) * 100;
   el.style.backgroundPosition = `${posX}% ${posY}%`;
-  el.title = TILE_NAMES[t] || '牌背';
+  el.title = t === -1 ? '暗牌' : (TILE_NAMES[t] || '牌背');
   return el;
 }
 
@@ -792,7 +882,19 @@ function lobby(me){
   );
 }
 
-function grp(ms,c){return ms.map(m=>h('span','grp',null,m.ts.map(t=>tz(t,c))))}
+/* ---------- 副露區渲染（暗槓對他人隱藏） ---------- */
+function grp(ms, c, isOwner=false){
+  return ms.map(m => {
+    const isAg = m.k === 'ag';
+    const showFace = isOwner || (S && S.ph === 'end') || !isAg;
+    const tiles = showFace ? m.ts : [-1, -1, -1, -1];
+    const extraCls = (isAg && isOwner && S && S.ph !== 'end') ? ' ag-self' : '';
+    const grpEl = h('span', 'grp', null, tiles.map(t => tz(t, c + extraCls)));
+    if (isAg && !showFace) grpEl.title = '暗槓（蓋牌隱藏）';
+    else if (isAg && isOwner) grpEl.title = '你的暗槓（僅自己可見）';
+    return grpEl;
+  });
+}
 
 function card(i,me){
   const x=S.seats[i],w=NM[(i-S.dealer+4)%4];
@@ -800,7 +902,7 @@ function card(i,me){
   return h('div','pl'+(S.ph==='play'&&S.turn===i?' on':''),null,[
     h('div',0,x.n+(i===S.dealer?' 莊':'')+(x.b?' 🤖':'')),
     h('div','mini',w+'家 '+S.sc[i]+'分 手牌'+(S.cnt[i]||0)+'張'),
-    h('div','hand',null,[...grp(S.mel[i],'sm'),...S.fl[i].map(t=>tz(t,'sm'))]),
+    h('div','hand',null,[...grp(S.mel[i],'sm', i===me),...S.fl[i].map(t=>tz(t,'sm'))]),
     h('div','row',null,backs)
   ]);
 }
@@ -829,14 +931,16 @@ function table(me){
   main.forEach((t,i)=>hs.push(mk(t,'m'+i)));
   if(last!=null){hs.push(h('span','gap'));hs.push(mk(last,'L'))}
 
-  const st=S.ph==='end'?'本局結束':S.mode==='d'?'輪到 '+S.seats[S.turn].n+' 打牌':'等待宣告：'+(S.wait.length?S.wait.map(i=>S.seats[i].n).join('、'):'…');
+  const st=S.ph==='end'?'本局結束':S.mode==='d'?'輪到 '+S.seats[S.turn].n+' 打牌':S.mode==='bg_c'?'等待搶槓宣告…':'等待宣告：'+(S.wait.length?S.wait.map(i=>S.seats[i].n).join('、'):'…');
   const acts=[];
-  if(S.ph==='play'&&S.mode==='c'&&S.wait.includes(me)){
+  if(S.ph==='play'&&(S.mode==='c'||S.mode==='bg_c')&&S.wait.includes(me)){
     const q=S.O[me]||{};
-    if(q.hu)acts.push(btn('胡',()=>send('hu'),'x'));
-    if(q.gang)acts.push(btn('槓',()=>send('gang')));
-    if(q.pon)acts.push(btn('碰',()=>send('pon')));
-    (q.chi||[]).forEach((c,i)=>acts.push(btn('吃 '+c.map(t=>tl(t).join('')).join(' '),()=>send('chi',{i}))));
+    if(q.hu)acts.push(btn(S.mode==='bg_c'?'搶槓胡':'胡',()=>send('hu'),'x'));
+    if(S.mode==='c'){
+      if(q.gang)acts.push(btn('槓',()=>send('gang')));
+      if(q.pon)acts.push(btn('碰',()=>send('pon')));
+      (q.chi||[]).forEach((c,i)=>acts.push(btn('吃 '+c.map(t=>tl(t).join('')).join(' '),()=>send('chi',{i}))));
+    }
     acts.push(btn('過',()=>send('pass'),'g'));
   }
   if(turnMe){
@@ -858,10 +962,10 @@ function table(me){
   if(S.ph==='end'){
     const r=S.res;
     kids.push(h('div','card res',null,r.draw?[h('b',0,'流局，莊家連莊')]:[
-      h('b',0,S.seats[r.w].n+(r.zm?' 自摸！':' 胡牌！（'+S.seats[r.f].n+' 放槍）')),
+      h('b',0,S.seats[r.w].n+(r.zm?' 自摸！':r.extra==='rob'?' 搶槓胡！（'+S.seats[r.f].n+' 被搶槓）':' 胡牌！（'+S.seats[r.f].n+' 放槍）')),
       h('div',0,r.L.join('、')||'無台'),
       h('div',0,'共 '+r.tai+' 台，每家賠 '+r.a+' 分'),
-      h('div','hand',null,[...grp(S.mel[r.w]||[],'sm'),...(S.H[r.w]||[]).slice().sort((a,b)=>a-b).map(t=>tz(t,'sm'))])
+      h('div','hand',null,[...grp(S.mel[r.w]||[],'sm',true),...(S.H[r.w]||[]).slice().sort((a,b)=>a-b).map(t=>tz(t,'sm'))])
     ]));
     kids.push(host?btn('下一局',()=>send('next')):h('div','mini','等待房主開始下一局'));
   }
@@ -871,7 +975,7 @@ function table(me){
       h('b',0,S.seats[me].n+'（你）'+NM[(me-S.dealer+4)%4]+'家 '+S.sc[me]+'分'),
       ...S.fl[me].map(t=>tz(t,'sm'))
     ]),
-    h('div','hand',null,[...grp(S.mel[me]),...hs]),
+    h('div','hand',null,[...grp(S.mel[me],'',true),...hs]),
     h('div','row',null,acts),
     turnMe?h('div','mini','點一張牌選取（牌會浮起），再點一次打出'):null
   ].filter(Boolean)));
